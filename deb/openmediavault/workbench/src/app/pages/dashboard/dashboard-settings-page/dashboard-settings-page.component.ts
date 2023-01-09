@@ -18,7 +18,8 @@
 import { Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { marker as gettext } from '@ngneat/transloco-keys-manager/marker';
-import * as _ from 'lodash';
+import { finalize, withLatestFrom } from 'rxjs/operators';
+import { DashboardUserConfig } from '~/app/core/components/dashboard/models/dashboard-user-config.model';
 
 import { DashboardWidgetConfig } from '~/app/core/components/dashboard/models/dashboard-widget-config.model';
 import { SelectionListPageConfig } from '~/app/core/components/intuition/models/selection-list-page-config.type';
@@ -81,26 +82,36 @@ export class DashboardSettingsPageComponent
   }
 
   ngOnInit(): void {
-    this.dashboardWidgetConfigService.configs$.subscribe(
-      (widgets: Array<DashboardWidgetConfig>) => {
-        const data: Array<SelectionListItem> = [];
-        const enabledWidgets: Array<string> = this.dashboardWidgetConfigService.getEnabled();
-        _.forEach(widgets, (widget: DashboardWidgetConfig) => {
-          data.push({
-            id: widget.id,
-            title: widget.title,
-            description: widget.description,
-            enabled: enabledWidgets.includes(widget.id)
-          });
-        });
-        this.config.store.data = [...data];
-      }
-    );
+    this.setLoadData(() => {
+      this.page.loading = true;
+      this.dashboardWidgetConfigService
+        .getEnabled()
+        .pipe(
+          withLatestFrom(this.dashboardWidgetConfigService.configs$),
+          finalize(() => (this.page.loading = false))
+        )
+        .subscribe(
+          ([enabledWidgets, widgets]: [DashboardUserConfig, Array<DashboardWidgetConfig>]) => {
+            this.config.store.data = widgets.map((widget) => {
+              return {
+                id: widget.id,
+                title: widget.title,
+                description: widget.description,
+                enabled: enabledWidgets.widgets.map((m) => m.id).includes(widget.id)
+              };
+            });
+            this.config.value = this.config.store.data
+              .filter((f: SelectionListItem) => f.enabled)
+              .map((m: SelectionListItem) => m.id);
+          }
+        );
+    });
   }
 
   onSubmit(buttonConfig, store, value: Array<string>) {
     this.markAsPristine();
-    this.dashboardWidgetConfigService.setEnabled(value);
-    this.router.navigate(['/dashboard']);
+    this.dashboardWidgetConfigService
+      .setEnabled(value)
+      .subscribe(() => this.router.navigate(['/dashboard']));
   }
 }

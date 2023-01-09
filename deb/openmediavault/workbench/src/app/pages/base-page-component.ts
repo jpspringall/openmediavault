@@ -58,6 +58,10 @@ export class BaseSelectionListPageComponent implements Dirty {
   markAsPristine(): void {
     this.page.markAsPristine();
   }
+
+  setLoadData(loadData: () => void) {
+    this.page.loadData = loadData;
+  }
 }
 
 @Directive()

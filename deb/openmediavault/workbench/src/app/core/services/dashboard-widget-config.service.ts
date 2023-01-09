@@ -15,15 +15,18 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
+import { Platform } from '@angular/cdk/platform';
 import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import * as _ from 'lodash';
 import { BehaviorSubject, Observable, of } from 'rxjs';
-import { catchError, map, tap } from 'rxjs/operators';
+import { catchError, map, mergeMap, take, tap } from 'rxjs/operators';
 
+import { DashboardUserConfig } from '~/app/core/components/dashboard/models/dashboard-user-config.model';
 import { DashboardWidgetConfig } from '~/app/core/components/dashboard/models/dashboard-widget-config.model';
 import { Permissions, Roles } from '~/app/shared/models/permissions.model';
 import { AuthSessionService } from '~/app/shared/services/auth-session.service';
+import { RpcService } from '~/app/shared/services/rpc.service';
 import { UserLocalStorageService } from '~/app/shared/services/user-local-storage.service';
 
 @Injectable({
@@ -34,10 +37,16 @@ export class DashboardWidgetConfigService {
 
   private configsSource = new BehaviorSubject<DashboardWidgetConfig[]>([]);
 
+  private get platformDeviceType(): string {
+    return this.platform.ANDROID || this.platform.IOS ? 'mobile' : 'desktop';
+  }
+
   constructor(
     private authSessionService: AuthSessionService,
     private http: HttpClient,
-    private userLocalStorageService: UserLocalStorageService
+    private userLocalStorageService: UserLocalStorageService,
+    public platform: Platform,
+    private rpcService: RpcService
   ) {
     this.configs$ = this.configsSource.asObservable();
   }
@@ -76,14 +85,45 @@ export class DashboardWidgetConfigService {
   }
 
   /**
-   * Get the identifiers of all enabled widgets of the current user.
-   *
-   * @return Returns a list of widget identifiers (UUID).
+   * Load the user's dashboard widget configuration.
    */
-  public getEnabled(): Array<string> {
-    const value = this.userLocalStorageService.get('dashboard_widgets', '[]');
-    const result: Array<string> = JSON.parse(value);
-    return result;
+  public getEnabled(): Observable<DashboardUserConfig> {
+    const emptyConfig: DashboardUserConfig = { widgets: [] };
+    return this.rpcService
+      .request('Dashboard', 'getDashboardSetting', { deviceType: this.platformDeviceType })
+      .pipe(
+        take(1),
+        catchError((error) => {
+          if (_.isFunction(error.preventDefault)) {
+            error.preventDefault();
+          }
+          return of(emptyConfig);
+        }),
+        mergeMap((userWidgetConfig: DashboardUserConfig) => {
+          if (userWidgetConfig == null) {
+            const enabledLocal = this.getEnabledLocal();
+            if (enabledLocal.length > 0) {
+              return this.setEnabled(enabledLocal).pipe(
+                take(1),
+                tap(() => this.userLocalStorageService.remove('dashboard_widgets'))
+              );
+            } else {
+              return of(emptyConfig);
+            }
+          } else {
+            return of(userWidgetConfig);
+          }
+        })
+      );
+  }
+
+  /**
+   * Load the user's dashboard widget configuration.
+   */
+  public resetUserWidgetConfig(): Observable<DashboardUserConfig> {
+    return this.rpcService
+      .request('Dashboard', 'deleteDashboardSetting', { deviceType: this.platformDeviceType })
+      .pipe(take(1));
   }
 
   /**
@@ -91,8 +131,27 @@ export class DashboardWidgetConfigService {
    *
    * @param ids The list of identifiers of the enabled widgets.
    */
-  public setEnabled(ids: Array<string>) {
-    const value = JSON.stringify(ids);
-    this.userLocalStorageService.set('dashboard_widgets', value);
+  public setEnabled(enabled: Array<string>): Observable<DashboardUserConfig> {
+    const userWidgetConfig: DashboardUserConfig = {
+      widgets: enabled.map((m) => {
+        return { id: m };
+      })
+    };
+
+    return this.rpcService.request('Dashboard', 'setDashboardSetting', {
+      deviceType: this.platformDeviceType,
+      data: userWidgetConfig
+    });
+  }
+
+  /**
+   * Get the identifiers of all enabled widgets of the current user stored locally.
+   *
+   * @return Returns a list of widget identifiers (UUID).
+   */
+  private getEnabledLocal(): Array<string> {
+    const value = this.userLocalStorageService.get('dashboard_widgets', '[]');
+    const result: Array<string> = JSON.parse(value);
+    return result;
   }
 }

@@ -40,6 +40,7 @@ import {
   SystemInformationService
 } from '~/app/shared/services/system-information.service';
 import { UserLocalStorageService } from '~/app/shared/services/user-local-storage.service';
+import { DashboardWidgetConfigService } from '~/app/core/services/dashboard-widget-config.service';
 
 @Component({
   selector: 'omv-top-bar',
@@ -78,7 +79,8 @@ export class TopBarComponent implements OnDestroy {
     private userLocalStorageService: UserLocalStorageService,
     private dialogService: DialogService,
     private notificationService: NotificationService,
-    private systemInformationService: SystemInformationService
+    private systemInformationService: SystemInformationService,
+    private dashboardWidgetConfigService: DashboardWidgetConfigService
   ) {
     this.currentLocale = LocaleService.getLocale();
     this.locales = LocaleService.getLocales();
@@ -202,8 +204,10 @@ export class TopBarComponent implements OnDestroy {
       gettext('Do you really want to reset the UI settings to their default values?'),
       'confirmation',
       () => {
-        this.userLocalStorageService.clear();
-        this.router.navigate(['/reload']);
+        this.dashboardWidgetConfigService.resetUserWidgetConfig().subscribe(() => {
+          this.userLocalStorageService.clear();
+          this.router.navigate(['/reload']);
+        });
       }
     );
   }

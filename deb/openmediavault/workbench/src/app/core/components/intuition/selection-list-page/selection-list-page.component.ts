@@ -201,7 +201,7 @@ export class SelectionListPageComponent
     }
   }
 
-  private loadData() {
+  loadData() {
     const store = this.config.store;
     this.loading = true;
     this.dataStoreService
